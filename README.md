@@ -2,7 +2,10 @@
 
 Author: George H. Chen (georgechen [at symbol] cmu.edu)
 
-This code accompanies the paper "Survival Kernets: Scalable and Interpretable Deep Kernel Survival Analysis with an Accuracy Guarantee".
+This code accompanies the paper:
+
+> George H. Chen. "Survival Kernets: Scalable and Interpretable Deep Kernel Survival Analysis with an Accuracy Guarantee".\
+> \[[arXiv](https://arxiv.org/abs/2206.10477)\]
 
 ### Code requirements
 
