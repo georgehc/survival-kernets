@@ -9,15 +9,15 @@ This code accompanies the paper:
 
 ### Code requirements
 
-- Anaconda Python 3 (tested with Python version 3.8.3)
-- Additional packages: hnswlib, lifelines, xgboost, pytorch (tested with PyTorch version 1.7.1 with CUDA 11.0)
-- cython compilation is required for the random survival forests implementation used:
+- Anaconda Python 3 (tested with Anaconda version 2020.07 running Python 3.8.3)
+- Additional packages: hnswlib, lifelines, xgboost, pytorch (tested with PyTorch version 1.7.1 with CUDA 11.0); for more precise details, see the [requirements.txt](requirements.txt) file (includes the packages we just mentioned along with various other packages that should already come with Anaconda Python 3) which can be installed via `pip install -r requirements.txt`
+- cython compilation is required for the random survival forests implementation used (in this repository, random survival forests are only used by the DKSA baseline):
 
 ```
 python setup_random_survival_forest_cython.py build_ext --inplace
 ```
 
-Note that this code comes with slightly modified versions of Haavard Kvamme's [PyCox](https://github.com/havakv/pycox) and [torchtuples](https://github.com/havakv/torchtuples) packages (some bug fixes/print flushing). Also, some files are from my earlier [DKSA repository](https://github.com/georgehc/dksa/) (`neural_kernel_survival.py`, `npsurvival_models.py`, `random_survival_forest_cython.pyx`, `setup_random_survival_forest_cython.py`). Kvamme's code is under a BSD 2-clause license whereas my code is under an MIT license.
+Note that this repository comes with slightly modified versions of Haavard Kvamme's [PyCox](https://github.com/havakv/pycox) and [torchtuples](https://github.com/havakv/torchtuples) packages (some bug fixes/print flushing). Also, some files are from my earlier [DKSA repository](https://github.com/georgehc/dksa/) (`neural_kernel_survival.py`, `npsurvival_models.py`, `random_survival_forest_cython.pyx`, `setup_random_survival_forest_cython.py`). Kvamme's code is under a BSD 2-clause license whereas my code is under an MIT license.
 
 The experiments in the paper were run on identical Ubuntu 20.04.2 LTS instances, each with an Intel Core i9-10900K CPU @ 3.70GHz (10 cores, 20 threads), 64GB RAM, and an Nvidia Quadro RTX 4000 (8GB GPU RAM).
 
