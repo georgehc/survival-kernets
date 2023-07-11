@@ -1,11 +1,15 @@
-The MIT license below applies to all files in this repository except the ones
-in the directories `torchtuples` and `pycox`, which are by Haavard Kvamme
-(with minor modifications by George H. Chen) and are under a BSD 2-clause
-license (see `torchtuples/LICENSE` and `pycox/LICENSE`).
+The MIT license below applies to all files in this repository except:
+- all files in the directory `data`, which are publicly available datasets
+  (see README.md for links to where these datasets were obtained)
+- all files in the directory `auton_survival`, which is by the CMU Auton Lab
+  and are under an MIT license (see `auton_survival/LICENSE`)
+- all files in the directories `torchtuples` and `pycox`, which are by Haavard
+  Kvamme (with minor modifications by George H. Chen) and are under a BSD
+  2-clause license (see `torchtuples/LICENSE` and `pycox/LICENSE`)
 
 -------------------------------------------------------------------------------
 
-Copyright (c) 2022 George H. Chen
+Copyright (c) 2023 George H. Chen
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -591,24 +591,10 @@ class NKS(KernelModel):
                 np.array([survival_summarize(idx_durations[_], events[_],
                                              num_durations)
                           for _ in assignments])
-            self.compute_exemplar_KM()
 
         self.baseline_event_counts = None
         self.baseline_at_risk_counts = None
         self.baseline_hazard = None
-
-    def compute_exemplar_KM(self):
-        exemplar_hazards = np.zeros(self.exemplar_labels[:, 0, :].shape,
-                                    dtype=np.float)
-        nonzero_mask = self.exemplar_labels[:, 1, :] > 0
-        if np.any(nonzero_mask):
-            exemplar_hazards[nonzero_mask] = \
-                self.exemplar_labels[:, 0, :][nonzero_mask] / \
-                self.exemplar_labels[:, 1, :][nonzero_mask]
-        self.exemplar_KM = \
-            np.exp(np.cumsum(
-                np.log(1 - exemplar_hazards + 1e-7),
-                axis=1))
 
     def interpolate(self, sub=10, scheme='const_pdf', duration_index=None):
         if duration_index is None:
@@ -624,117 +610,11 @@ class NKS(KernelModel):
     def predict_surv(self, input, batch_size=256, numpy=None, eval_=True,
                      to_cpu=False, num_workers=0, epsilon=1e-7, mode='hazard',
                      **kwargs):
-        if mode == 'hazard':
-            hazard = self.predict_hazard(input, batch_size, False, eval_,
-                                         to_cpu, num_workers, **kwargs)
-            surv = (1 - hazard).add(epsilon).log().cumsum(1).exp()
-            return tt.utils.array_or_tensor(surv, numpy, input)
-        elif mode != 'surv':
+        if mode != 'hazard':
             raise NotImplementedError
-
-        test_embeddings = self.predict(input, batch_size, False, eval_, False,
-                                       True, num_workers)
-        train_embeddings = self.train_embeddings
-        tau_squared = self.tau ** 2
-
-        if self.beta == 0:
-            # compute kernel matrix
-            if self.brute_force:
-                sq_dists = cdist(test_embeddings, train_embeddings,
-                                 'sqeuclidean')
-                weights = np.exp(-sq_dists) * (sq_dists <= tau_squared)
-
-            else:
-                weights_shape = ((test_embeddings.shape[0],
-                                  self.train_embeddings.shape[0]))
-                if num_workers <= 0:
-                    n_threads = os.cpu_count()
-                else:
-                    n_threads = num_workers
-
-                k = self.n_neighbors
-                labels, sq_dists = \
-                    self.ann_index.knn_query(test_embeddings, k=k,
-                                             num_threads=n_threads)
-                row_col_pairs = \
-                    np.array([(row, col)
-                              for row, cols in enumerate(labels)
-                              for col in cols],
-                             dtype=np.int64)
-                rows = row_col_pairs[:, 0]
-                cols = row_col_pairs[:, 1]
-                sq_dists_flat = sq_dists.flatten()
-                weights = csr_matrix((np.exp(-sq_dists_flat)
-                                      * (sq_dists_flat <= tau_squared),
-                                     (rows, cols)), shape=weights_shape)
-
-            # convert observed time matrix to be for test data
-            weights_discretized = weights.dot(self.train_obs_matrix)
-
-            # kernel hazard function calculation
-            num_at_risk = \
-                np.flip(np.cumsum(np.flip(weights_discretized,
-                                          axis=1), axis=1), axis=1) + 1e-12
-            num_events = weights.dot(self.train_event_matrix)
-
-            hazards = np.zeros(num_at_risk.shape)
-            row_sums = num_events.sum(axis=1)
-            row_zero_mask = (row_sums == 0)
-            if np.any(row_zero_mask):
-                hazards[row_zero_mask, :] = self.overall_hazard
-            row_nonzero_mask = ~row_zero_mask
-            hazards[row_nonzero_mask] = \
-                np.clip(num_events[row_nonzero_mask]
-                        / num_at_risk[row_nonzero_mask], 1e-12, 1. - 1e-12)
-            surv = (1 - hazards).add(epsilon).log().cumsum(1).exp()
-        else:
-            if self.brute_force:
-                exemplars = np.array([_[0] for _ in self.exemplar_assignments],
-                                     dtype=np.int64)
-                sq_dists = cdist(test_embeddings, train_embeddings[exemplars],
-                                 'sqeuclidean')
-                weights = np.exp(-sq_dists) * (sq_dists <= tau_squared)
-
-            else:
-                weights_shape = ((test_embeddings.shape[0],
-                                  len(self.exemplar_assignments)))
-                if num_workers <= 0:
-                    n_threads = os.cpu_count()
-                else:
-                    n_threads = num_workers
-
-                k = self.dkn_n_neighbors
-                labels, sq_dists = \
-                    self.ann_index.knn_query(test_embeddings, k=k,
-                                             num_threads=n_threads)
-                row_col_pairs = \
-                    np.array([(row, col)
-                              for row, cols in enumerate(labels)
-                              for col in cols],
-                             dtype=np.int64)
-                rows = row_col_pairs[:, 0]
-                cols = row_col_pairs[:, 1]
-                sq_dists_flat = sq_dists.flatten()
-                weights = csr_matrix((np.exp(-sq_dists_flat)
-                                      * (sq_dists_flat <= tau_squared),
-                                     (rows, cols)), shape=weights_shape)
-
-            if self.baseline_hazard is not None:
-                baseline_KM = \
-                    np.exp(np.cumsum(np.log(
-                        1 - self.baseline_hazard + epsilon)))
-            else:
-                baseline_KM = self.overall_KM
-
-            # gamma * n from the regression/classification setup
-            gamma_n = np.exp(-tau_squared) / self.train_embeddings.shape[0]
-
-            numer = np.array(weights.dot(self.exemplar_KM) +
-                gamma_n * baseline_KM[np.newaxis, :])
-            denom = np.array(weights.sum(axis=1) + gamma_n).reshape(-1)
-
-            surv = numer / denom[:, np.newaxis]
-
+        hazard = self.predict_hazard(input, batch_size, False, eval_,
+                                     to_cpu, num_workers, **kwargs)
+        surv = (1 - hazard).add(epsilon).log().cumsum(1).exp()
         return tt.utils.array_or_tensor(surv, numpy, input)
 
     def predict_hazard(self, input, batch_size=256, numpy=None, eval_=True,
@@ -1029,92 +909,6 @@ class NKSSummaryLoss(nn.Module):
                 * pycox.models.loss._reduction(rank_loss, reduction)
         else:
             return pycox.models.loss._reduction(nll_loss, reduction)
-
-
-class NKSSummarySurv(nn.Module):
-    def __init__(self, encoder, distance_threshold, exemplar_embeddings,
-                 exemplar_labels, overall_hazard, n_train, device):
-        super(NKSSummarySurv, self).__init__()
-        if type(exemplar_embeddings) is not torch.Tensor:
-            exemplar_embeddings = torch.tensor(exemplar_embeddings,
-                                               dtype=torch.float32,
-                                               device=device)
-        else:
-            exemplar_embeddings = torch.clone(exemplar_embeddings.detach())
-        self.exemplar_embeddings = exemplar_embeddings
-        assert type(exemplar_labels) == np.ndarray
-        exemplar_event_counts = exemplar_labels[:, 0, :]
-        exemplar_at_risk_counts = \
-            np.hstack((exemplar_labels[:, 1, :],
-                       np.zeros((exemplar_labels.shape[0], 1))))
-        exemplar_censor_counts = \
-            exemplar_at_risk_counts[:, :-1] - exemplar_at_risk_counts[:, 1:] \
-            - exemplar_event_counts
-        self.log_exemplar_event_counts = \
-            nn.Parameter(torch.tensor(exemplar_event_counts,
-                                      dtype=torch.float32,
-                                      device=device).clamp(
-                                          min=1e-12).log())
-        self.log_exemplar_censor_counts = \
-            nn.Parameter(torch.tensor(exemplar_censor_counts,
-                                      dtype=torch.float32,
-                                      device=device).clamp(
-                                          min=1e-12).log())
-        n_durations = exemplar_event_counts.shape[1]
-        overall_hazard_clamped = np.clip(overall_hazard, 1e-12, 1-1e-12)
-        overall_hazard_logit = np.log(overall_hazard_clamped /
-                                      (1 - overall_hazard_clamped))
-        self.logit_baseline_hazard = \
-            nn.Parameter(torch.tensor(overall_hazard_logit,
-                                      dtype=torch.float32,
-                                      device=device))
-        self.encoder = encoder
-        self.distance_threshold = torch.tensor(distance_threshold,
-                                               dtype=torch.float32,
-                                               device=device)
-        self.n_train = n_train
-
-    def forward(self, input: Tensor) -> Tensor:
-        with torch.no_grad():
-            turn_training_back_on = False
-            if self.encoder.training:
-                self.encoder.eval()
-                turn_training_back_on = True
-            phi = self.encoder(input)
-            if turn_training_back_on:
-                self.encoder.train()
-
-            distances = torch.cdist(phi, self.exemplar_embeddings)
-
-            mask = (distances <= self.distance_threshold)
-            kernel_weights = torch.zeros_like(distances)
-            if torch.any(mask):
-                kernel_weights[mask] = torch.exp(-distances[mask]**2)
-
-        baseline_hazard = F.sigmoid(self.logit_baseline_hazard)
-        baseline_KM = (1 - baseline_hazard).add(1e-7).log().cumsum(0).exp()
-
-        exemplar_event_counts = self.log_exemplar_event_counts.exp()
-        exemplar_censor_counts = self.log_exemplar_censor_counts.exp()
-        exemplar_at_risk_counts = \
-            (exemplar_event_counts
-             + exemplar_censor_counts).flip(1).cumsum(1).flip(1)
-        exemplar_hazards = torch.zeros_like(exemplar_event_counts)
-        exemplar_nonzero_mask = exemplar_at_risk_counts > 0
-        if torch.any(exemplar_nonzero_mask):
-            exemplar_hazards[exemplar_nonzero_mask] = \
-                exemplar_event_counts[exemplar_nonzero_mask] / \
-                exemplar_at_risk_counts[exemplar_nonzero_mask]
-        exemplar_KM = (1 - exemplar_hazards).add(1e-7).log().cumsum(1).exp()
-
-        gamma_n = torch.exp(-self.distance_threshold**2) / \
-            self.n_train
-
-        numer = torch.matmul(kernel_weights, exemplar_KM) \
-            + gamma_n * baseline_KM.view(1, -1)
-        denom = (kernel_weights.sum(1) + gamma_n + 1e-12).view(-1, 1)
-
-        return torch.clamp(numer / denom, 1e-12, 1 - 1e-12)  # surv
 
 
 class InterpolateNKS(InterpolateLogisticHazard):

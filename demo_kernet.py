@@ -103,6 +103,12 @@ hyperparams = \
      in ast.literal_eval(config[method_header]['batch_size'])
      for lr
      in lr_range]
+if 'sumtune_learning_rate' in config[method_header]:
+    sumtune_lr_range = \
+        ast.literal_eval(
+            config[method_header]['sumtune_learning_rate'])
+else:
+    sumtune_lr_range = lr_range
 
 hyperparam_hash = hashlib.sha256()
 hyperparam_hash.update(str(hyperparams).encode('utf-8'))
@@ -149,6 +155,10 @@ for experiment_idx in range(n_experiment_repeats):
             # train/test split
             continue
 
+        if dataset == 'kkbox' and experiment_idx > 0:
+            # kkbox takes too much time so we will only run it once
+            continue
+
         # load_dataset already shuffles; no need to reshuffle
         proper_train_idx, val_idx = train_test_split(range(len(X_train)),
                                                      test_size=val_ratio,
@@ -166,6 +176,11 @@ for experiment_idx in range(n_experiment_repeats):
         y_proper_train = y_train[proper_train_idx].astype('float32')
         X_val = X_train[val_idx]
         y_val = y_train[val_idx].astype('float32')
+
+        min_time = y_proper_train[:, 0][y_proper_train[:, 1] == 1].min()
+        keep_mask = y_proper_train[:, 0] >= min_time
+        X_proper_train = X_proper_train[keep_mask]
+        y_proper_train = y_proper_train[keep_mask]
 
         X_proper_train_std, transformer = \
             compute_features_and_transformer(X_proper_train)
@@ -272,9 +287,11 @@ for experiment_idx in range(n_experiment_repeats):
 
                 if n_durations == 0:
                     label_transformer = LabTransDiscreteTime(
-                        np.unique(y_proper_train[:, 0]))
+                        np.unique(y_proper_train[:, 0][
+                            y_proper_train[:, 1] == 1]))
                 else:
-                    label_transformer = LabTransDiscreteTime(n_durations)
+                    label_transformer = LabTransDiscreteTime(
+                        n_durations, scheme='quantiles')
                 y_proper_train_discrete = \
                     label_transformer.fit_transform(*y_proper_train.T)
                 train_pair = (X_proper_train_std, y_proper_train_discrete)
@@ -374,9 +391,14 @@ for experiment_idx in range(n_experiment_repeats):
         # optionally fine-tune summary functions
         #
         X_true_train = X_train[true_train_idx]
+        y_true_train = y_train[true_train_idx].astype('float32')
+
+        keep_mask = y_true_train[:, 0] >= min_time
+        X_true_train = X_true_train[keep_mask]
+        y_true_train = y_true_train[keep_mask]
+
         X_true_train_std = transform_features(X_true_train, transformer)
         X_true_train_std = X_true_train_std.astype('float32')
-        y_true_train = y_train[true_train_idx].astype('float32')
 
         pretrain_frac, alpha, sigma, n_durations, gamma, beta, \
             min_kernel_weight, squared_radius, n_neighbors, n_layers, n_nodes, \
@@ -419,6 +441,7 @@ for experiment_idx in range(n_experiment_repeats):
                     max_n_neighbors=n_neighbors,
                     dkn_max_n_neighbors=n_neighbors)
 
+        max_n_epochs = int(config[method_header]['max_n_epochs'])
         dataset_max_n_epochs = 'max_n_epochs_%s' % dataset
         if dataset_max_n_epochs in config[method_header]:
             max_n_epochs = \
@@ -441,9 +464,11 @@ for experiment_idx in range(n_experiment_repeats):
         # recompute label transformer used for the base neural net
         if n_durations == 0:
             label_transformer = LabTransDiscreteTime(
-                np.unique(y_proper_train[:, 0]))
+                np.unique(y_proper_train[:, 0][
+                    y_proper_train[:, 1] == 1]))
         else:
-            label_transformer = LabTransDiscreteTime(n_durations)
+            label_transformer = LabTransDiscreteTime(
+                n_durations, scheme='quantiles')
         y_proper_train_discrete = \
             label_transformer.fit_transform(*y_proper_train.T)
         model.duration_index = label_transformer.cuts
@@ -493,13 +518,13 @@ for experiment_idx in range(n_experiment_repeats):
                 arg_min_finetune = None
                 finetune_min_loss = np.inf
                 epoch_times = []
-                for finetune_lr in lr_range:
+                for finetune_lr in sumtune_lr_range:
                     torch.manual_seed(method_random_seed)
                     np.random.seed(method_random_seed)
                     random.seed(method_random_seed)
 
                     summary_finetune_net = \
-                        NKSSummary2(model, init_exemplar_labels)
+                        NKSSummary(model, init_exemplar_labels)
                     summary_model = \
                         Model(summary_finetune_net,
                               NKSSummaryLoss(alpha, sigma),
@@ -632,7 +657,7 @@ for experiment_idx in range(n_experiment_repeats):
 
             if finetune_min_loss < min_loss:
                 summary_finetune_net = \
-                    NKSSummary2(model, init_exemplar_labels)
+                    NKSSummary(model, init_exemplar_labels)
                 summary_model = \
                     Model(summary_finetune_net,
                           NKSSummaryLoss(alpha, sigma),

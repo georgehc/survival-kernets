@@ -387,60 +387,59 @@ for experiment_idx in range(n_experiment_repeats):
 
         if not compute_bootstrap_CI:
             final_test_scores[arg_min] = tuple(test_set_metrics)
-            continue
-
-        rng = np.random.RandomState(bootstrap_random_seed)
-
-        bootstrap_dir = \
-            os.path.join(output_dir, 'bootstrap',
-                         '%s_%s_exp%d_bs%d_nep%d_l%f_a%f_lr%f_test'
-                         % (estimator_name, dataset, experiment_idx,
-                            batch_size, n_epochs, lmbda, alpha, lr))
-        os.makedirs(bootstrap_dir, exist_ok=True)
-        bootstrap_losses_filename = os.path.join(bootstrap_dir,
-                                                 'bootstrap_losses.txt')
-        if not os.path.isfile(bootstrap_losses_filename):
-            bootstrap_losses = []
-            for bootstrap_idx in range(bootstrap_n_samples):
-                bootstrap_sample_indices = \
-                    rng.choice(X_test.shape[0],
-                               size=X_test.shape[0],
-                               replace=True)
-
-                y_bootstrap_pred = y_test_pred[bootstrap_sample_indices]
-
-                bootstrap_losses.append(
-                    neg_cindex(y_test[bootstrap_sample_indices],
-                               y_bootstrap_pred))
-
-            bootstrap_losses = np.array(bootstrap_losses)
-            np.savetxt(bootstrap_losses_filename, bootstrap_losses)
         else:
-            bootstrap_losses = \
-                np.loadtxt(bootstrap_losses_filename).flatten()
-        print()
+            rng = np.random.RandomState(bootstrap_random_seed)
 
-        sorted_bootstrap_losses = np.sort(bootstrap_losses)
+            bootstrap_dir = \
+                os.path.join(output_dir, 'bootstrap',
+                             '%s_%s_exp%d_bs%d_nep%d_l%f_a%f_lr%f_test'
+                             % (estimator_name, dataset, experiment_idx,
+                                batch_size, n_epochs, lmbda, alpha, lr))
+            os.makedirs(bootstrap_dir, exist_ok=True)
+            bootstrap_losses_filename = os.path.join(bootstrap_dir,
+                                                     'bootstrap_losses.txt')
+            if not os.path.isfile(bootstrap_losses_filename):
+                bootstrap_losses = []
+                for bootstrap_idx in range(bootstrap_n_samples):
+                    bootstrap_sample_indices = \
+                        rng.choice(X_test.shape[0],
+                                   size=X_test.shape[0],
+                                   replace=True)
 
-        tail_prob = ((1. - bootstrap_CI_coverage) / 2)
-        lower_end = int(np.floor(tail_prob * bootstrap_n_samples))
-        upper_end = int(np.ceil((1. - tail_prob) * bootstrap_n_samples))
-        print('%0.1f%% bootstrap confidence intervals:'
-              % (100 * bootstrap_CI_coverage), flush=True)
-        print('loss: (%0.8f, %0.8f)'
-              % (sorted_bootstrap_losses[lower_end],
-                 sorted_bootstrap_losses[upper_end]), flush=True)
-        print()
-        test_set_metrics += [sorted_bootstrap_losses[lower_end],
-                             sorted_bootstrap_losses[upper_end]]
+                    y_bootstrap_pred = y_test_pred[bootstrap_sample_indices]
 
-        np.savetxt(os.path.join(bootstrap_dir, 'final_metrics.txt'),
-                   np.array(test_set_metrics))
+                    bootstrap_losses.append(
+                        neg_cindex(y_test[bootstrap_sample_indices],
+                                   y_bootstrap_pred))
 
-        final_test_scores[arg_min] = tuple(test_set_metrics)
+                bootstrap_losses = np.array(bootstrap_losses)
+                np.savetxt(bootstrap_losses_filename, bootstrap_losses)
+            else:
+                bootstrap_losses = \
+                    np.loadtxt(bootstrap_losses_filename).flatten()
+            print()
 
-        del model
-        gc.collect()
+            sorted_bootstrap_losses = np.sort(bootstrap_losses)
+
+            tail_prob = ((1. - bootstrap_CI_coverage) / 2)
+            lower_end = int(np.floor(tail_prob * bootstrap_n_samples))
+            upper_end = int(np.ceil((1. - tail_prob) * bootstrap_n_samples))
+            print('%0.1f%% bootstrap confidence intervals:'
+                  % (100 * bootstrap_CI_coverage), flush=True)
+            print('loss: (%0.8f, %0.8f)'
+                  % (sorted_bootstrap_losses[lower_end],
+                     sorted_bootstrap_losses[upper_end]), flush=True)
+            print()
+            test_set_metrics += [sorted_bootstrap_losses[lower_end],
+                                 sorted_bootstrap_losses[upper_end]]
+
+            np.savetxt(os.path.join(bootstrap_dir, 'final_metrics.txt'),
+                       np.array(test_set_metrics))
+
+            final_test_scores[arg_min] = tuple(test_set_metrics)
+
+            del model
+            gc.collect()
 
         if compute_bootstrap_CI:
             test_csv_writer.writerow(

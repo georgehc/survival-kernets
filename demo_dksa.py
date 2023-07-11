@@ -306,7 +306,9 @@ for experiment_idx in range(n_experiment_repeats):
                 print('- Time elapsed: %f second(s)' % elapsed, flush=True)
 
                 tic = time.time()
-                sorted_unique_y_proper_train = np.unique(y_proper_train[:, 0])
+                sorted_unique_y_proper_train = np.unique(
+                    y_proper_train[:, 0][
+                        y_proper_train[:, 1] == 1])
                 surv = \
                     surv_model.predict_surv(X_val_std,
                                             sorted_unique_y_proper_train,
@@ -413,7 +415,6 @@ for experiment_idx in range(n_experiment_repeats):
             mds = MDS(n_components=mds_size,
                       metric=True,
                       n_init=mds_n_init,
-                      n_jobs=n_jobs,
                       random_state=mds_random_seed,
                       dissimilarity='precomputed')
             mds_embedding = mds.fit_transform(rsf_dists)
@@ -667,9 +668,11 @@ for experiment_idx in range(n_experiment_repeats):
 
                 if n_durations == 0:
                     label_transformer = LabTransDiscreteTime(
-                        np.unique(y_proper_train[:, 0]))
+                        np.unique(y_proper_train[:, 0][
+                            y_proper_train[:, 1] == 1]))
                 else:
-                    label_transformer = LabTransDiscreteTime(n_durations)
+                    label_transformer = LabTransDiscreteTime(
+                        n_durations, scheme='quantiles')
                 y_proper_train_discrete = \
                     label_transformer.fit_transform(*y_proper_train.T)
 
@@ -800,9 +803,11 @@ for experiment_idx in range(n_experiment_repeats):
 
         if n_durations == 0:
             label_transformer = LabTransDiscreteTime(
-                np.unique(y_proper_train[:, 0]))
+                np.unique(y_proper_train[:, 0][
+                    y_proper_train[:, 1] == 1]))
         else:
-            label_transformer = LabTransDiscreteTime(n_durations)
+            label_transformer = LabTransDiscreteTime(
+                n_durations, scheme='quantiles')
         y_proper_train_discrete = \
             label_transformer.fit_transform(*y_proper_train.T)
 

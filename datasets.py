@@ -16,7 +16,7 @@ import scipy.io
 import statsmodels.api as sm
 import torch
 from lifelines.datasets import load_regression_dataset
-from pycox.datasets import metabric, support, kkbox
+from pycox.datasets import flchain, support, kkbox
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from torchvision import transforms
@@ -30,9 +30,9 @@ def load_dataset(dataset, random_seed_offset=0, fix_test_shuffle_train=False):
     Parameters
     ----------
     dataset : string
-        One of 'support' or 'kkbox'. For simplicity, we have removed support
-        for the UNOS dataset in our public code release as the UNOS dataset
-        requires special access.
+        One of 'rotterdam-gbsg', 'support', or 'kkbox'. For simplicity, we have
+        removed support for the UNOS dataset in our public code release as the
+        UNOS dataset requires special access.
 
     random_seed_offset : int, optional (default=0)
         Offset to add to random seed in shuffling the data.
@@ -219,11 +219,53 @@ def load_dataset(dataset, random_seed_offset=0, fix_test_shuffle_train=False):
 
         dataset_random_seed = 331231101
 
+    elif dataset == 'rotterdam-gbsg':
+        # ----------------------------------------------------------------------
+        # snippet of code from DeepSurv repository
+        datasets = defaultdict(dict)
+        with h5py.File('data/gbsg_cancer_train_test.h5', 'r') as fp:
+            for ds in fp:
+                for array in fp[ds]:
+                    datasets[ds][array] = fp[ds][array][:]
+        # ----------------------------------------------------------------------
+
+        feature_names = ['horTh', 'tsize', 'menostat', 'age', 'pnodes',
+                         'progrec', 'estrec']
+
+        X_train = datasets['train']['x']
+        y_train = np.array([datasets['train']['t'], datasets['train']['e']]).T
+        X_test = datasets['test']['x']
+        y_test = np.array([datasets['test']['t'], datasets['test']['e']]).T
+
+        def compute_features_and_transformer(features, cox=False):
+            new_features = np.zeros_like(features)
+            transformer = StandardScaler()
+            cols_standardize = [3, 4, 5, 6]
+            cols_leave = [0, 2]
+            new_features[:, cols_standardize] = \
+                transformer.fit_transform(features[:, cols_standardize])
+            new_features[:, cols_leave] = features[:, cols_leave]
+            new_features[:, 1] = features[:, 1] / 2.
+            return new_features, transformer
+
+        def transform_features(features, transformer, cox=False):
+            new_features = np.zeros_like(features)
+            cols_standardize = [3, 4, 5, 6]
+            cols_leave = [0, 2]
+            new_features[:, cols_standardize] = \
+                transformer.transform(features[:, cols_standardize])
+            new_features[:, cols_leave] = features[:, cols_leave]
+            new_features[:, 1] = features[:, 1] / 2.
+            return new_features
+
+        dataset_random_seed = 1831262265
+        fixed_train_test_split = True
+
     elif dataset == 'kkbox':
         df = kkbox.read_df()
         if df is None:
-            raise Exception(
-                'Please download kkbox first. See the PyCox documentation.')
+            kkbox.download_kkbox()
+            df = kkbox.read_df()
 
         feature_names = ['log_days_between_subs', 'n_prev_churns',
                 'log_days_since_reg_init', 'log_payment_plan_days',

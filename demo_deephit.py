@@ -191,9 +191,11 @@ for experiment_idx in range(n_experiment_repeats):
                 optimizer = tt.optim.Adam(lr=lr)
                 if n_durations == 0:
                     labtrans = DeepHitSingle.label_transform(
-                        np.unique(y_proper_train[:, 0]))
+                        np.unique(y_proper_train[:, 0][
+                            y_proper_train[:, 1] == 1]))
                 else:
-                    labtrans = DeepHitSingle.label_transform(n_durations)
+                    labtrans = DeepHitSingle.label_transform(
+                        n_durations, scheme='quantiles')
                 y_proper_train_discrete = \
                     labtrans.fit_transform(*y_proper_train.T)
                 net = tt.practical.MLPVanilla(X_proper_train_std.shape[1],
@@ -233,8 +235,7 @@ for experiment_idx in range(n_experiment_repeats):
                     surv_df = \
                         model.interpolate(10).predict_surv_df(
                             X_val_std, to_cpu=True)
-                    y_val_pred = (surv_df.to_numpy(),
-                                       surv_df.index)
+                    y_val_pred = (surv_df.to_numpy(), surv_df.index)
                     val_loss = neg_cindex_td(y_val, y_val_pred, exact=False)
                     epoch_val_time = time.time() - tic_
                     epoch_times.append([epoch_train_time,
@@ -342,9 +343,11 @@ for experiment_idx in range(n_experiment_repeats):
         optimizer = tt.optim.Adam(lr=lr)
         if n_durations == 0:
             labtrans = DeepHitSingle.label_transform(
-                np.unique(y_proper_train[:, 0]))
+                np.unique(y_proper_train[:, 0][
+                    y_proper_train[:, 1] == 1]))
         else:
-            labtrans = DeepHitSingle.label_transform(n_durations)
+            labtrans = DeepHitSingle.label_transform(
+                n_durations, scheme='quantiles')
         y_proper_train_discrete = labtrans.fit_transform(*y_proper_train.T)
         net = tt.practical.MLPVanilla(X_proper_train_std.shape[1],
                                       [n_nodes for layer_idx

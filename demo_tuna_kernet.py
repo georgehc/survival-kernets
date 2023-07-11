@@ -239,6 +239,11 @@ for experiment_idx in range(n_experiment_repeats):
         X_val = X_train[val_idx]
         y_val = y_train[val_idx].astype('float32')
 
+        min_time = y_proper_train[:, 0][y_proper_train[:, 1] == 1].min()
+        keep_mask = y_proper_train[:, 0] >= min_time
+        X_proper_train = X_proper_train[keep_mask]
+        y_proper_train = y_proper_train[keep_mask]
+
         X_proper_train_std, transformer = \
             compute_features_and_transformer(X_proper_train)
         X_val_std = transform_features(X_val, transformer)
@@ -655,9 +660,11 @@ for experiment_idx in range(n_experiment_repeats):
 
                 if n_durations == 0:
                     label_transformer = LabTransDiscreteTime(
-                        np.unique(y_proper_train[:, 0]))
+                        np.unique(y_proper_train[:, 0][
+                            y_proper_train[:, 1] == 1]))
                 else:
-                    label_transformer = LabTransDiscreteTime(n_durations)
+                    label_transformer = LabTransDiscreteTime(
+                        n_durations, scheme='quantiles')
                 y_proper_train_discrete = \
                     label_transformer.fit_transform(*y_proper_train.T)
                 train_pair = (X_proper_train_std, y_proper_train_discrete)
@@ -762,9 +769,14 @@ for experiment_idx in range(n_experiment_repeats):
         # Summary fine-tuning
         #
         X_true_train = X_train[true_train_idx]
+        y_true_train = y_train[true_train_idx].astype('float32')
+
+        keep_mask = y_true_train[:, 0] >= min_time
+        X_true_train = X_true_train[keep_mask]
+        y_true_train = y_true_train[keep_mask]
+
         X_true_train_std = transform_features(X_true_train, transformer)
         X_true_train_std = X_true_train_std.astype('float32')
-        y_true_train = y_train[true_train_idx].astype('float32')
 
         pretrain_frac, alpha, sigma, n_durations, gamma, beta, \
             min_kernel_weight, n_neighbors, batch_size, n_epochs, lr, seed \
@@ -829,9 +841,11 @@ for experiment_idx in range(n_experiment_repeats):
         # recompute label transformer used for the base neural net
         if n_durations == 0:
             label_transformer = LabTransDiscreteTime(
-                np.unique(y_proper_train[:, 0]))
+                np.unique(y_proper_train[:, 0][
+                    y_proper_train[:, 1] == 1]))
         else:
-            label_transformer = LabTransDiscreteTime(n_durations)
+            label_transformer = LabTransDiscreteTime(
+                n_durations, scheme='quantiles')
         y_proper_train_discrete = \
             label_transformer.fit_transform(*y_proper_train.T)
         model.duration_index = label_transformer.cuts
@@ -882,7 +896,8 @@ for experiment_idx in range(n_experiment_repeats):
                 arg_min_finetune = None
                 finetune_min_loss = np.inf
                 epoch_times = []
-                for finetune_lr in sumtune_lr_range:
+                for finetune_lr_idx, finetune_lr in \
+                        enumerate(sumtune_lr_range):
                     torch.manual_seed(finetune_method_random_seed)
                     np.random.seed(finetune_method_random_seed)
                     random.seed(finetune_method_random_seed)
@@ -900,8 +915,9 @@ for experiment_idx in range(n_experiment_repeats):
                             batch_size, True)
                     best_loss = np.inf
                     # record the preprocessing time
-                    epoch_times.append(
-                        [time.time() - tic, 0.])
+                    if finetune_lr_idx == 0:
+                        epoch_times.append(
+                            [time.time() - tic, 0.])
                     for epoch_idx in range(max_n_epochs):
                         tic_ = time.time()
                         summary_model.fit_dataloader(train_loader,
