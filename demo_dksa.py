@@ -971,6 +971,9 @@ for experiment_idx in range(n_experiment_repeats):
             test_csv_writer.writerow(
                 [dataset, experiment_idx, full_estimator_name,
                  final_test_scores[arg_min][0]])
+        output_test_table_file.flush()
 
         print()
         print()
+
+output_test_table_file.close()

@@ -42,7 +42,7 @@ import torchtuples as tt
 from datasets import load_dataset
 from metrics import neg_cindex, neg_cindex_td
 from models import NKS, KernelPretrainMSELoss, Hypersphere, Model, \
-    compute_mds_embeddings, NKSSummary, NKSSummaryLoss
+    NKSSummary, NKSSummaryLoss
 from pycox.preprocessing.label_transforms import LabTransDiscreteTime
 
 
@@ -76,9 +76,7 @@ bootstrap_CI_coverage = float(config['DEFAULT']['bootstrap_CI_coverage'])
 bootstrap_n_samples = int(config['DEFAULT']['bootstrap_n_samples'])
 bootstrap_random_seed = int(config['DEFAULT']['bootstrap_random_seed'])
 
-mds_random_seed = int(config['DEFAULT']['mds_random_seed'])
-mds_n_init = int(config['DEFAULT']['mds_n_init'])
-mds_n_subsample = int(config['DEFAULT']['mds_n_subsample'])
+tuna_random_seed = int(config['DEFAULT']['tuna_random_seed'])
 
 os.makedirs(finetune_output_dir, exist_ok=True)
 os.makedirs(os.path.join(finetune_output_dir, 'models'), exist_ok=True)
@@ -311,50 +309,39 @@ for experiment_idx in range(n_experiment_repeats):
                            label=y_val[:, 0] *
                            2*(y_val[:, 1] - 0.5))
 
-        X_proper_train_leaves = \
-            xgb_model[:(n_rounds * n_parallel_trees)].predict(
-                dtrain, pred_leaf=True).astype(np.float32)
-        X_val_leaves = \
-            xgb_model[:(n_rounds * n_parallel_trees)].predict(
-                dval, pred_leaf=True).astype(np.float32)
+        # warning: back when this code was first written, XGBoost worked a bit
+        # differently in terms of how the model was saved, so there is now some
+        # extra code logic for dealing with the old vs the new format...
+        # (there should only be a difference when `n_parallel_trees` > 1)
+        xgb_old_format = False
+        if n_parallel_trees > 1:
+            xgb_n_boosted_rounds = xgb_model.num_boosted_rounds()
+            if xgb_n_boosted_rounds == max_n_rounds * n_parallel_trees:
+                xgb_old_format = True
+        if xgb_old_format:
+            X_proper_train_leaves = \
+                xgb_model[:(n_rounds * n_parallel_trees)].predict(
+                    dtrain, pred_leaf=True).astype(np.float32)
+            X_val_leaves = \
+                xgb_model[:(n_rounds * n_parallel_trees)].predict(
+                    dval, pred_leaf=True).astype(np.float32)
+        else:
+            X_proper_train_leaves = \
+                xgb_model[:n_rounds].predict(
+                    dtrain, pred_leaf=True).astype(np.float32)
+            X_val_leaves = \
+                xgb_model[:n_rounds].predict(
+                    dval, pred_leaf=True).astype(np.float32)
 
         # ---------------------------------------------------------------------
 
-        subsample_indices_filename = \
-            model_filename[:-6] + '_subsample_indices.txt'
-        subsample_indices_time_filename = \
-            model_filename[:-6] + '_subsample_time.txt'
-        if not os.path.isfile(subsample_indices_filename) \
-                or not os.path.isfile(subsample_indices_time_filename):
-            tic = time.time()
-            if X_proper_train_std.shape[0] < mds_n_subsample:
-                subsample_indices = np.arange(X_proper_train_std.shape[0])
-            else:
-                np.random.seed(mds_random_seed)
-                subsample_indices = \
-                    np.random.permutation(
-                        X_proper_train_std.shape[0])[:mds_n_subsample]
-            elapsed = time.time() - tic
-            print('Time elapsed: %f second(s)' % elapsed, flush=True)
-            np.savetxt(subsample_indices_filename, subsample_indices)
-            np.savetxt(subsample_indices_time_filename,
-                       np.array(elapsed).reshape(1, -1))
-        else:
-            print('Loading MDS subsample indices...')
-            subsample_indices = \
-                np.loadtxt(subsample_indices_filename).astype(np.int64)
-            elapsed = float(np.loadtxt(subsample_indices_time_filename))
-            print('Time elapsed (from previous fitting): '
-                  + '%f second(s)' % elapsed, flush=True)
-        print()
-
         warmstart_best_params_filename = \
             model_filename[:-6] \
-            + '_mds_mlp_params_%s.pkl' \
+            + '_tuna_mlp_params_%s.pkl' \
             % (warmstart_hyperparam_hash)
         warmstart_train_times_filename = \
             model_filename[:-6] \
-            + '_mds_training_times_%s.txt' \
+            + '_tuna_training_times_%s.txt' \
             % (warmstart_hyperparam_hash)
         if not os.path.isfile(warmstart_best_params_filename) \
                 or not os.path.isfile(warmstart_train_times_filename):
@@ -373,45 +360,13 @@ for experiment_idx in range(n_experiment_repeats):
                         int(config[finetune_method_header][
                             dataset_max_n_epochs])
 
-                mds_embeddings_filename = \
-                    model_filename[:-6] \
-                    + '_mds%d_embeddings.txt' % n_output_features
-                mds_time_filename = \
-                    model_filename[:-6] \
-                    + '_mds%d_time.txt' % n_output_features
-                if not os.path.isfile(mds_embeddings_filename) \
-                        or not os.path.isfile(mds_time_filename):
-                    print('Computing MDS embeddings...', flush=True)
-                    tic = time.time()
-                    mds_embeddings = \
-                        compute_mds_embeddings(
-                            X_proper_train_std[subsample_indices],
-                            xgb_model[:(n_rounds * n_parallel_trees)],
-                            n_output_features,
-                            mds_n_init=mds_n_init,
-                            mds_random_seed=mds_random_seed)
-                    elapsed = time.time() - tic
-                    np.savetxt(mds_embeddings_filename, mds_embeddings)
-                    np.savetxt(mds_time_filename,
-                               np.array(elapsed).reshape(1, -1))
-                    print('Time elapsed: %f second(s)' % elapsed,
-                          flush=True)
-                else:
-                    print('Loading MDS embeddings...')
-                    mds_embeddings = \
-                        np.loadtxt(mds_embeddings_filename).astype(
-                            np.float32)
-                    elapsed = float(np.loadtxt(mds_time_filename))
-                    print('Time elapsed (from previous fitting): '
-                          + '%f second(s)' % elapsed, flush=True)
-
                 print()
 
                 tic = time.time()
 
-                torch.manual_seed(mds_random_seed)
-                np.random.seed(mds_random_seed)
-                random.seed(mds_random_seed)
+                torch.manual_seed(tuna_random_seed)
+                np.random.seed(tuna_random_seed)
+                random.seed(tuna_random_seed)
 
                 optimizer = tt.optim.Adam(lr=lr)
                 if squared_radius == 0:
@@ -441,7 +396,7 @@ for experiment_idx in range(n_experiment_repeats):
 
                 warmstart_model_filename = \
                     model_filename[:-6] \
-                    + '_mds_mlp_sr%f_nla%d_nno%d_bs%d_mnep%d_lr%f.pt' \
+                    + '_tuna_mlp_sr%f_nla%d_nno%d_bs%d_mnep%d_lr%f.pt' \
                     % (squared_radius, n_layers, n_nodes, batch_size,
                        max_n_epochs, lr)
                 time_elapsed_filename = \
@@ -502,9 +457,9 @@ for experiment_idx in range(n_experiment_repeats):
             warmstart_best_params = pickle.load(pickle_file)
             squared_radius, n_layers, n_nodes, batch_size, max_n_epochs, lr \
                 = warmstart_best_params
-        torch.manual_seed(mds_random_seed)
-        np.random.seed(mds_random_seed)
-        random.seed(mds_random_seed)
+        torch.manual_seed(tuna_random_seed)
+        np.random.seed(tuna_random_seed)
+        random.seed(tuna_random_seed)
 
         n_output_features = min(n_nodes, X_proper_train_std.shape[1])
 
@@ -535,7 +490,7 @@ for experiment_idx in range(n_experiment_repeats):
 
         warmstart_model_filename = \
             model_filename[:-6] \
-            + '_mds_mlp_sr%f_nla%d_nno%d_bs%d_mnep%d_lr%f.pt' \
+            + '_tuna_mlp_sr%f_nla%d_nno%d_bs%d_mnep%d_lr%f.pt' \
             % (squared_radius, n_layers, n_nodes, batch_size, max_n_epochs, lr)
         warmstart_model.load_model_weights(warmstart_model_filename)
 
@@ -1162,8 +1117,12 @@ for experiment_idx in range(n_experiment_repeats):
               flush=True)
 
         dtest = xgb.DMatrix(X_test_std)
-        xgb_y_test_pred = \
-            xgb_model[:(n_rounds * n_parallel_trees)].predict(dtest)
+        if xgb_old_format:
+            xgb_y_test_pred = \
+                xgb_model[:(n_rounds * n_parallel_trees)].predict(dtest)
+        else:
+            xgb_y_test_pred = \
+                xgb_model[:n_rounds].predict(dtest)
         xgb_loss = neg_cindex(y_test, xgb_y_test_pred)
         print('For reference, xgboost achieves test loss %f' % xgb_loss,
               flush=True)
@@ -1248,6 +1207,9 @@ for experiment_idx in range(n_experiment_repeats):
             test_csv_writer.writerow(
                 [dataset, experiment_idx, full_estimator_name,
                  final_test_scores[arg_min][0]])
+        output_test_table_file.flush()
 
         print()
         print()
+
+output_test_table_file.close()

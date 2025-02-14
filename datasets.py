@@ -5,22 +5,13 @@ Author: George H. Chen (georgechen [at symbol] cmu.edu)
 """
 #!/usr/bin/env python
 import csv
-import os
-from collections import defaultdict
-
 import h5py
 import numpy as np
 import pandas as pd
-import scipy
-import scipy.io
-import statsmodels.api as sm
-import torch
-from lifelines.datasets import load_regression_dataset
-from pycox.datasets import flchain, support, kkbox
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
+from collections import defaultdict
+from pycox.datasets import support, kkbox
 from sklearn.model_selection import train_test_split
-from torchvision import transforms
-from torchvision import datasets as visiondatasets
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 def load_dataset(dataset, random_seed_offset=0, fix_test_shuffle_train=False):

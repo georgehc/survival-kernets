@@ -111,31 +111,6 @@ def symmetric_squared_pairwise_distances(x):
     return diag + diag.t() - 2*r
 
 
-# efficient pairwise distances from:
-# https://discuss.pytorch.org/t/efficient-distance-matrix-computation/9065/3
-def squared_pairwise_distances(x, y=None):
-    '''
-    Input: x is a Nxd matrix
-           y is an optional Mxd matirx
-    Output: dist is a NxM matrix where dist[i,j] is the square norm between
-            x[i,:] and y[j,:] if y is not given then use 'y=x'.
-    i.e. dist[i,j] = ||x[i,:]-y[j,:]||^2
-    '''
-    x_norm = (x**2).sum(1).view(-1, 1)
-    if y is not None:
-        y_t = torch.transpose(y, 0, 1)
-        y_norm = (y**2).sum(1).view(1, -1)
-    else:
-        y_t = torch.transpose(x, 0, 1)
-        y_norm = x_norm.view(1, -1)
-
-    dist = x_norm + y_norm - 2.0 * torch.mm(x, y_t)
-    # Ensure diagonal is zero if x=y
-    # if y is None:
-    #     dist = dist - torch.diag(dist.diag)
-    return torch.clamp(dist, 0.0, np.inf)
-
-
 class NLLKernelHazardLoss(torch.nn.Module):
     def __init__(self, alpha, sigma, gamma):
         super(NLLKernelHazardLoss, self).__init__()
@@ -172,7 +147,7 @@ def nll_kernel_hazard(phi: Tensor, idx_durations: Tensor, events: Tensor,
 
     batch_size = phi.size(0)
     num_durations = idx_durations.max().item() + 1
-    if alpha > 0:
+    if alpha < 1:
         rank_mat_np = pair_rank_mat(idx_durations.detach().cpu().numpy(),
                                     events.detach().cpu().numpy())
         # rank_normalization_constant = rank_mat_np.sum()
@@ -213,7 +188,7 @@ def nll_kernel_hazard(phi: Tensor, idx_durations: Tensor, events: Tensor,
     else:
         uniformity_loss = 0.
 
-    if alpha > 0:
+    if alpha < 1:
         surv = (1 - hazards).add(1e-12).log().cumsum(1).exp()
         ones = torch.ones((batch_size, 1), device=phi.device)
         A = surv.matmul(y_bce.transpose(0, 1))
@@ -743,6 +718,16 @@ class NKS(KernelModel):
         assert extension == '.pt'
         super().load_model_weights(path + extension, **kwargs)
 
+    def get_summary_functions(self):
+        return self.exemplar_labels.copy()
+
+    def load_summary_functions(self, exemplar_summary_functions,
+                               baseline_event_counts=None,
+                               baseline_at_risk_counts=None):
+        self.exemplar_labels = exemplar_summary_functions
+        self.baseline_event_counts = baseline_event_counts
+        self.baseline_at_risk_counts = baseline_at_risk_counts
+
 
 def one_hot(x):
     x_one_hot = np.zeros((x.size, int(x.max()) + 1))
@@ -880,7 +865,7 @@ class NKSSummaryLoss(nn.Module):
 
         batch_size = hazards.size(0)
         num_durations = hazards.size(1)
-        if alpha > 0:
+        if alpha < 1:
             rank_mat_np = pair_rank_mat(idx_durations.detach().cpu().numpy(),
                                         events.detach().cpu().numpy())
             # rank_normalization_constant = rank_mat_np.sum()
@@ -894,7 +879,7 @@ class NKSSummaryLoss(nn.Module):
         bce = F.binary_cross_entropy(hazards, y_bce, reduction='none')
         nll_loss = bce.cumsum(1).gather(1, idx_durations).view(-1)
 
-        if alpha > 0:
+        if alpha < 1:
             surv = (1 - hazards).add(1e-12).log().cumsum(1).exp()
             ones = torch.ones((batch_size, 1), device=hazards.device)
             A = surv.matmul(y_bce.transpose(0, 1))
@@ -1151,3 +1136,42 @@ class NKSSummary(nn.Module):
             + baseline_at_risk_counts.view(1, -1) + 1e-12
 
         return torch.clamp(numer / denom, 1e-12, 1. - 1e-12)  # hazards
+
+    def get_exemplar_summary_functions_baseline_event_at_risk_counts(self):
+        log_exemplar_event_counts = self.log_exemplar_event_counts
+        log_exemplar_censor_counts = self.log_exemplar_censor_counts
+        log_baseline_event_counts = self.log_baseline_event_counts
+        log_baseline_censor_counts = self.log_baseline_censor_counts
+
+        exemplar_event_counts = \
+            np.exp(log_exemplar_event_counts.detach(
+                ).cpu().numpy())
+        exemplar_censor_counts = \
+            np.exp(log_exemplar_censor_counts.detach(
+                ).cpu().numpy())
+        exemplar_at_risk_counts = \
+            np.flip(
+                np.cumsum(
+                    np.flip(exemplar_event_counts
+                            + exemplar_censor_counts,
+                            axis=1),
+                    axis=1),
+                axis=1)
+        baseline_event_counts = \
+            np.exp(log_baseline_event_counts.detach(
+                ).cpu().numpy())
+        baseline_censor_counts = \
+            np.exp(log_baseline_censor_counts.detach(
+                ).cpu().numpy())
+        baseline_at_risk_counts = \
+            np.flip(
+                np.cumsum(
+                    np.flip(baseline_event_counts
+                            + baseline_censor_counts)))
+
+        n_exemplars = exemplar_event_counts.shape[0]
+        n_time = exemplar_event_counts.shape[1]
+        exemplar_labels = np.zeros((n_exemplars, 2, n_time))
+        exemplar_labels[:, 0, :] = exemplar_event_counts
+        exemplar_labels[:, 1, :] = exemplar_at_risk_counts
+        return exemplar_labels, baseline_event_counts, baseline_at_risk_counts

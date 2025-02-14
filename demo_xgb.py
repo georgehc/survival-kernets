@@ -340,7 +340,19 @@ for experiment_idx in range(n_experiment_repeats):
         model = xgb.Booster({'nthread': n_jobs})
         model.load_model(model_filename)
 
-        y_test_pred = model[:(n_rounds * n_parallel_trees)].predict(dtest)
+        # warning: back when this code was first written, XGBoost worked a bit
+        # differently in terms of how the model was saved, so there is now some
+        # extra code logic for dealing with the old vs the new format...
+        # (there should only be a difference when `n_parallel_trees` > 1)
+        xgb_old_format = False
+        if n_parallel_trees > 1:
+            xgb_n_boosted_rounds = model.num_boosted_rounds()
+            if xgb_n_boosted_rounds == max_n_rounds * n_parallel_trees:
+                xgb_old_format = True
+        if xgb_old_format:
+            y_test_pred = model[:(n_rounds * n_parallel_trees)].predict(dtest)
+        else:
+            y_test_pred = model[:n_rounds].predict(dtest)
         loss = neg_cindex(y_test, y_test_pred)
         print('Hyperparameter', arg_min, 'achieves test loss %f' % loss,
               flush=True)
@@ -415,6 +427,9 @@ for experiment_idx in range(n_experiment_repeats):
             test_csv_writer.writerow(
                 [dataset, experiment_idx, estimator_name,
                  final_test_scores[arg_min][0]])
+        output_test_table_file.flush()
 
         print()
         print()
+
+output_test_table_file.close()

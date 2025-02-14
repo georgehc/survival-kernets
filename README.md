@@ -4,8 +4,13 @@ Author: George H. Chen (georgechen [at symbol] cmu.edu)
 
 This code accompanies the paper:
 
-> George H. Chen. "Survival Kernets: Scalable and Interpretable Deep Kernel Survival Analysis with an Accuracy Guarantee".\
+> George H. Chen. "Survival Kernets: Scalable and Interpretable Deep Kernel Survival Analysis with an Accuracy Guarantee". JMLR 2024.\
 > \[[arXiv](https://arxiv.org/abs/2206.10477)\]
+
+Note that when I originally wrote this code repository, my main focus was on making the code reproducible and, unfortunately, I did not write it in a pedagogically friendly manner. For an easier-to-digest demo that illustrates how to train a survival kernet model, please see [this Jupyter code notebook](https://github.com/georgehc/survival-intro/blob/main/S4.3_Survival_Kernets.ipynb) that accompanies my more recently published monograph (Chapter 4 of the monograph is on deep kernel survival models including survival kernets):
+
+> George H. Chen (2024), "An Introduction to Deep Survival Analysis Models for Predicting Time-to-Event Outcomes", Foundations and Trends® in Machine Learning: Vol. 17: No. 6, pp 921-1100. http://dx.doi.org/10.1561/2200000114 \
+> \[[arXiv](https://arxiv.org/abs/2410.01086)\]
 
 ### Code requirements
 
